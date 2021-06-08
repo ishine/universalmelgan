@@ -2,6 +2,29 @@ import torch
 import torch.nn as nn
 import torchaudio
 import numpy as np
+import random
+
+
+class RandomTimeShift(object):
+    def __init__(self, p, max_time_shift=None):
+        self.p = p
+        self.max_time_shift = max_time_shift
+    
+    def forward(self, sample):
+        if torch.rand(1) < self.p:
+            if self.max_time_shift is None:
+                self.max_time_shift = sample.shape[-1] // 20
+            n_shift = random.randint(0, self.max_time_shift)
+            if n_shift == 0:
+                return sample
+            else:
+                pad = torch.zeros(n_shift, dtype=sample.dtype)
+                direcion = random.random()
+                if direcion > 0.5:
+                    sample = torch.cat((pad, sample[:-n_shift]), dim=-1)
+                else:
+                    sample = torch.cat((sample[n_shift:], pad), dim=-1)
+        return sample
 
 
 class RandomAmp(object):
@@ -67,7 +90,7 @@ class RandomAddSine(object):
             n = torch.arange(0, sample.shape[0], 1)
             f = 50 + 3*torch.randn(1)
             t = n*1./self.fs
-            s = torch.norm(sample)
+            s = torch.sqrt(torch.mean(sample**2))
             sgm = s * 10**(-self.snr_db/20.)  
             b = sgm*s*torch.sin(2*np.pi*f*t+torch.rand(1)*np.pi)
             sample = sample + b           
@@ -82,6 +105,7 @@ class AudioAugs(object):
         self.random_quantnoise = RandomQuantNoise(n_bits=16, p=0.5)
         self.awgn = RandomAddAWGN(snr_db=30, p=0.5)
         self.sine = RandomAddSine(fs=fs, snr_db=30, p=0.5)
+        self.tshift = RandomTimeShift(p=0.5, max_time_shift=None)
         self.augs = augs
     
     def __call__(self, sample):
@@ -98,6 +122,8 @@ class AudioAugs(object):
                 sample = self.sine(sample)
             elif aug=='awgn':
                 sample = self.awgn(sample)
+            elif aug == 'tshift':
+                sample = self.tshift(sample)
         return sample
 
 if __name__ == "__main__":
